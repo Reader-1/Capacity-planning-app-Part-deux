@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tutor Capacity Planning Tool</title>
+    <!-- 1. Include Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 2. Include Chart.js -->
+    <script src="https://cdn.jsdelivr.net-npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+    <style>
+        /* Simple loading spinner */
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans antialiased">
+
+    <!-- Header -->
+    <header class="bg-white shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <h1 class="text-3xl font-bold tracking-tight text-gray-900">Tutor Supply Chain & Capacity Planning Tool</h1>
+            <p class="text-gray-600 mt-1">Projecting time-slot-based inventory needs from macro student demand.</p>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <div class="flex flex-col lg:flex-row max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 gap-8">
+
+        <!-- ===== Left Column: Control Panel ===== -->
+        <aside class="lg:w-1/3 bg-white p-6 rounded-lg shadow-lg h-fit sticky top-8">
+            <h2 class="text-2xl font-semibold text-gray-800 border-b pb-3">Planning Variables</h2>
+            
+            <div class="space-y-6 mt-6">
+                <div>
+                    <label for="target-students" class="block text-sm font-medium text-gray-700">1. Target Total Students</label>
+                    <input type="number" id="target-students" value="16500" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                    <p class="mt-1 text-xs text-gray-500">Enter the total projected student enrollment for your target date.</p>
+                </div>
+
+                <div>
+                    <label for="target-date" class="block text-sm font-medium text-gray-700">2. Target Date</label>
+                    <input type="date" id="target-date" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                    <p class="mt-1 text-xs text-gray-500">Select the date you need to meet this demand.</p>
+                </div>
+
+                <div>
+                    <label for="lead-time" class="block text-sm font-medium text-gray-700">3. Recruitment Lead Time (Months)</label>
+                    <input type="number" id="lead-time" value="4" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                    <p class="mt-1 text-xs text-gray-500">Time from recruitment start to tutor deployment.</p>
+                </div>
+
+                <div>
+                    <label for="buffer-percent" class="block text-sm font-medium text-gray-700">4. Target Safety Buffer (%)</label>
+                    <input type="number" id="buffer-percent" value="10" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                    <p class="mt-1 text-xs text-gray-500">Safety stock for subs and churn (e.g., 10% = 1.10x demand).</p>
+                </div>
+
+                <div>
+                    <label for="cohort-size" class="block text-sm font-medium text-gray-700">5. Tutors per Cohort</label>
+                    <input type="number" id="cohort-size" value="250" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                    <p class="mt-1 text-xs text-gray-500">Average number of tutors in one recruitment cohort.</p>
+                </div>
+
+                <button id="run-projection-btn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg shadow-md transition duration-150 ease-in-out flex items-center justify-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5">
+                        <path fill-rule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.204 2.153l-2.3-2.3a1 1 0 011.414-1.414l2.3 2.3a3.5 3.5 0 104.95-4.95l-2.3-2.3a1 1 0 011.414-1.414l2.3 2.3A5.5 5.5 0 0115.312 11.424z" clip-rule="evenodd" />
+                    </svg>
+                    Run Projection
+                </button>
+                <div id="loading-spinner" class="loader mx-auto hidden"></div>
+            </div>
+        </aside>
+
+        <!-- ===== Right Column: Dashboard & Chart ===== -->
+        <main class="lg:w-2/3 space-y-8">
+            
+            <!-- Recruitment Alert -->
+            <div id="recruitment-alert" class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded-lg shadow" role="alert">
+                <p class="font-bold">Recruitment Alert</p>
+                <p>To meet demand for <strong id="alert-date">Feb 9, 2026</strong>, you must begin recruiting <strong id="alert-cohorts">3 cohorts</strong> by <strong id="alert-start-date">October 9, 2025</strong>.</p>
+            </div>
+
+            <!-- Dashboard KPI Cards -->
+            <section>
+                <h2 class="text-2xl font-semibold text-gray-800 mb-4">Projected Dashboard</h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="bg-white p-6 rounded-lg shadow-lg">
+                        <h3 class="text-sm font-medium text-gray-500">Total Prime-Time Deficit</h3>
+                        <p id="kpi-deficit" class="mt-1 text-4xl font-bold text-red-600">-985</p>
+                        <p class="text-xs text-gray-500">Tutors needed in 8:45-10:45 AM block</p>
+                    </div>
+                    <div class="bg-white p-6 rounded-lg shadow-lg">
+                        <h3 class="text-sm font-medium text-gray-500">Recruitment Cohorts</h3>
+                        <p id="kpi-cohorts" class="mt-1 text-4xl font-bold text-indigo-600">3.94</p>
+                        <p class="text-xs text-gray-500">Based on largest time-slot deficit</p>
+                    </div>
+                    <div class="bg-white p-6 rounded-lg shadow-lg">
+                        <h3 class="text-sm font-medium text-gray-500">Projected Peak Utilization</h3>
+                        <p id="kpi-utilization" class="mt-1 text-4xl font-bold text-orange-600">128.4%</p>
+                        <p class="text-xs text-gray-500">Demand vs. *Current* Supply</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Main Chart -->
+            <section class="bg-white p-6 rounded-lg shadow-lg">
+                <h2 class="text-2xl font-semibold text-gray-800 mb-4">Projected Tutor Deficit by Time Slot</h2>
+                <!-- MODIFICATION: Add a container with a defined height for the chart -->
+                <div class="relative h-96 w-full">
+                    <canvas id="capacityChart"></canvas>
+                </div>
+            </section>
+
+            <!-- Data Table -->
+            <section class="bg-white p-6 rounded-lg shadow-lg">
+                <h2 class="text-2xl font-semibold text-gray-800 mb-4">Projection Details</h2>
+                <div class="overflow-x-auto rounded-lg border border-gray-200">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time Slot</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Projected Demand</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Target Supply (w/ Buffer)</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Current Supply</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Deficit / Surplus</th>
+                            </tr>
+                        </thead>
+                        <tbody id="results-table-body" class="bg-white divide-y divide-gray-200">
+                            <!-- Rows will be injected by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <script>
+        // === DATA STORE ===
+        // Hardcoded baseline data from 'Tutor Capacity Model_ Counts (1).csv'
+        // Based on 10/20/2025 data (Cols A, D, F, G)
+        const baselineCapacityData = [
+            { time: "6:00 AM", demand: 0, supply: 49, buffer: 24.5 },
+            { time: "6:15 AM", demand: 0, supply: 27, buffer: 13.5 },
+            { time: "6:30 AM", demand: 1, supply: 34, buffer: 4.8 },
+            { time: "6:45 AM", demand: 3, supply: 43, buffer: 4.7 },
+            { time: "7:00 AM", demand: 12, supply: 65, buffer: 4.8 },
+            { time: "7:15 AM", demand: 24, supply: 88, buffer: 4.5 },
+            { time: "7:30 AM", demand: 61, supply: 139, buffer: 4.6 },
+            { time: "7:45 AM", demand: 99, supply: 191, buffer: 4.6 },
+            { time: "8:00 AM", demand: 184, supply: 297, buffer: 4.1 },
+            { time: "8:15 AM", demand: 310, supply: 395, buffer: 4.1 },
+            { time: "8:30 AM", demand: 388, supply: 486, buffer: 4.0 },
+            // --- PEAK TIME START ---
+            { time: "8:45 AM", demand: 451, supply: 484, buffer: -2.5 }, // Deficit
+            { time: "9:00 AM", demand: 463, supply: 443, buffer: -4.5 }, // Deficit
+            { time: "9:15 AM", demand: 490, supply: 490, buffer: 0.0 },
+            { time: "9:30 AM", demand: 459, supply: 499, buffer: -1.0 }, // Deficit
+            { time: "9:45 AM", demand: 487, supply: 514, buffer: -3.5 }, // Deficit
+	        { time: "10:00 AM", demand: 511, supply: 550, buffer: -1.5 }, // Deficit
+            { time: "10:15 AM", demand: 486, supply: 525, buffer: -1.3 }, // Deficit
+            { time: "10:30 AM", demand: 501, supply: 545, buffer: 3.3 },
+            { time: "10:45 AM", demand: 506, supply: 484, buffer: -4.5 }, // Deficit
+            // --- PEAK TIME END ---
+            { time: "11:00 AM", demand: 425, supply: 476, buffer: 5.8 },
+            { time: "11:15 AM", demand: 367, supply: 461, buffer: 8.8 },
+            { time: "11:30 AM", demand: 337, supply: 459, buffer: 11.0 },
+            { time: "11:45 AM", demand: 271, supply: 418, buffer: 14.3 },
+            { time: "12:00 PM", demand: 196, supply: 368, buffer: 17.1 },
+            { time: "12:15 PM", demand: 151, supply: 326, buffer: 19.3 },
+            { time: "12:30 PM", demand: 133, supply: 319, buffer: 21.0 },
+            { time: "12:45 PM", demand: 104, supply: 298, buffer: 23.3 },
+            { time: "1:00 PM", demand: 86, supply: 279, buffer: 24.6 },
+            { time: "1:15 PM", demand: 75, supply: 266, buffer: 25.5 },
+            { time: "1:30 PM", demand: 68, supply: 263, buffer: 26.8 },
+            { time: "1:45 PM", demand: 60, supply: 250, buffer: 27.6 },
+            { time: "2:00 PM", demand: 55, supply: 245, buffer: 28.6 },
+            { time: "2:15 PM", demand: 51, supply: 245, buffer: 29.8 },
+            { time: "2:30 PM", demand: 47, supply: 236, buffer: 30.1 },
+            { time: "2:45 PM", demand: 43, supply: 232, buffer: 31.0 },
+            { time: "3:00 PM", demand: 43, supply: 226, buffer: 31.0 },
+            { time: "3:15 PM", demand: 42, supply: 212, buffer: 29.6 },
+            { time: "3:30 PM", demand: 41, supply: 206, buffer: 29.7 },
+            { time: "3:45 PM", demand: 31, supply: 179, buffer: 31.1 },
+            { time: "4:00 PM", demand: 25, supply: 161, buffer: 31.3 },
+            { time: "4:15 PM", demand: 22, supply: 147, buffer: 31.3 },
+            { time: "4:30 PM", demand: 17, supply: 134, buffer: 31.9 },
+            { time: "4:45 PM", demand: 14, supply: 122, buffer: 32.5 },
+            { time: "5:00 PM", demand: 11, supply: 105, buffer: 32.4 },
+            { time: "5:15 PM", demand: 10, supply: 99, buffer: 33.0 },
+            { time: "5:30 PM", demand: 9, supply: 90, buffer: 33.0 },
+            { time: "5:45 PM", demand: 7, supply: 84, buffer: 33.3 },
+            { time: "6:00 PM", demand: 6, supply: 80, buffer: 33.5 },
+            { time: "6:15 PM", demand: 3, supply: 74, buffer: 34.0 },
+            { time: "6:30 PM", demand: 3, supply: 70, buffer: 34.0 },
+            { time: "6:45 PM", demand: 1, supply: 66, buffer: 34.5 },
+            { time: "7:00 PM", demand: 1, supply: 64, buffer: 34.5 },
+            { time: "7:15 PM", demand: 1, supply: 60, buffer: 34.5 },
+            { time: "7:30 PM", demand: 1, supply: 58, buffer: 34.5 },
+            { time: "7:45 PM", demand: 0, supply: 54, buffer: 34.5 },
+            { time: "8:00 PM", demand: 0, supply: 46, buffer: 34.5 }
+        ];
+
+        // === GLOBAL VARIABLES ===
+        let projectionData = [];
+        let baselineTotalStudents = 12477; // From 'Tutor Capacity Plan 2025-2026.csv' on 10/20/2025
+        let myChart = null;
+        const peakTimeStart = "8:45 AM";
+        const peakTimeEnd = "10:45 AM";
+
+        // --- MODIFICATION: Declare DOM variables here, but assign them in initializeApp ---
+        let targetStudentsInput, targetDateInput, leadTimeInput, bufferPercentInput, cohortSizeInput;
+        let runButton, loadingSpinner;
+        let kpiDeficit, kpiCohorts, kpiUtilization;
+        let alertBox, alertDate, alertCohorts, alertStartDate;
+        let tableBody, ctx;
+        // --- END MODIFICATION ---
+
+
+        // === CORE FUNCTIONS ===
+
+        /**
+         * Runs the full projection calculation
+         */
+        function runProjection() {
+            runButton.disabled = true;
+            loadingSpinner.classList.remove('hidden');
+
+            // --- MODIFICATION: Wrap the entire function's logic in try/catch/finally ---
+            try {
+                // 1. Get all user inputs
+                const targetStudents = parseFloat(targetStudentsInput.value) || 0;
+                const bufferPercent = parseFloat(bufferPercentInput.value) || 0;
+                const leadTimeMonths = parseInt(leadTimeInput.value, 10) || 0;
+                const cohortSize = parseInt(cohortSizeInput.value, 10) || 250;
+                const targetDate = new Date(targetDateInput.value + 'T00:00:00'); // Fix for timezone issues
+
+                // 2. Calculate Growth Factor
+                const growthFactor = targetStudents / baselineTotalStudents;
+                if (isNaN(growthFactor) || !isFinite(growthFactor)) {
+                    // This error will now be caught
+                    throw new Error("Could not calculate growth factor. Check baseline student number.");
+                }
+
+                // 3. Process data for each time slot
+                projectionData = baselineCapacityData.map(slot => {
+                    const projectedDemand = slot.demand * growthFactor;
+                    const targetSupply = projectedDemand * (1 + (bufferPercent / 100));
+                    const supplyDeficit = targetSupply - slot.supply;
+                    // Handle 0 supply to avoid Infinity
+                    const projectedUtilization = slot.supply > 0 ? (projectedDemand / slot.supply) * 100 : (projectedDemand > 0 ? Infinity : 0);
+
+                    return {
+                        ...slot,
+                        projectedDemand: Math.round(projectedDemand),
+                        targetSupply: Math.round(targetSupply),
+                        supplyDeficit: Math.round(supplyDeficit),
+                        projectedUtilization: projectedUtilization,
+                    };
+                });
+                
+                // 4. Update all UI components
+                // --- MODIFICATION: Removed the setTimeout wrapper ---
+                updateDashboard(projectionData, cohortSize);
+                updateAlerts(targetDate, leadTimeMonths, projectionData, cohortSize);
+                renderChart(projectionData);
+                populateTable(projectionData);
+            
+            } catch (e) {
+                console.error("Error during projection:", e);
+                // Display error in the alert box
+                if(alertBox) {
+                    // Reset alert box to error state
+                    alertBox.classList.remove('bg-yellow-100', 'border-yellow-500', 'text-yellow-700');
+                    alertBox.classList.add('bg-red-100', 'border-red-500', 'text-red-700');
+                    alertBox.innerHTML = `<p class="font-bold">An Error Occurred</p><p>${e.message}. Please check the console for details.</p>`;
+                    alertBox.classList.remove('hidden');
+                } else {
+                    // Fallback if alert box isn't found
+                    alert("An error occurred. Please check the console.");
+                }
+            } finally {
+                // This will now run regardless of errors in the 'try' block
+                runButton.disabled = false;
+                loadingSpinner.classList.add('hidden');
+            }
+            // --- END MODIFICATION ---
+        }
+
+        /**
+         * Updates the 3 main KPI cards
+         */
+        function updateDashboard(data, cohortSize) {
+            let peakTimeDeficit = 0;
+            let peakTimeProjectedDemand = 0;
+            let peakTimeCurrentSupply = 0;
+            let maxDeficit = 0;
+
+            const peakStartIndex = data.findIndex(s => s.time === peakTimeStart);
+            const peakEndIndex = data.findIndex(s => s.time === peakTimeEnd);
+
+            data.forEach((slot, index) => {
+                if (index >= peakStartIndex && index <= peakEndIndex) {
+                    if (slot.supplyDeficit > 0) {
+                        peakTimeDeficit += slot.supplyDeficit;
+                    }
+                    peakTimeProjectedDemand += slot.projectedDemand;
+                    peakTimeCurrentSupply += slot.supply;
+                }
+                if (slot.supplyDeficit > maxDeficit) {
+                    maxDeficit = slot.supplyDeficit;
+                }
+            });
+            
+            const cohortsNeeded = (maxDeficit / cohortSize).toFixed(2);
+            // Handle division by zero if current peak supply is 0
+            const peakUtilization = (peakTimeCurrentSupply > 0 ? (peakTimeProjectedDemand / peakTimeCurrentSupply * 100) : (peakTimeProjectedDemand > 0 ? Infinity : 0)).toFixed(1);
+
+
+            kpiDeficit.textContent = `-${peakTimeDeficit.toLocaleString()}`;
+            kpiCohorts.textContent = cohortsNeeded;
+            kpiUtilization.textContent = `${peakUtilization === 'Infinity' ? 'N/A' : peakUtilization + '%'}`;
+            
+            // Add color coding
+            kpiDeficit.classList.toggle('text-red-600', peakTimeDeficit > 0);
+            kpiDeficit.classList.toggle('text-green-600', peakTimeDeficit <= 0);
+            
+            const utilizationValue = parseFloat(peakUtilization);
+            kpiUtilization.classList.toggle('text-orange-600', utilizationValue > 90);
+            kpiUtilization.classList.toggle('text-red-600', utilizationValue > 100);
+            kpiUtilization.classList.toggle('text-green-600', utilizationValue <= 90);
+        }
+
+        /**
+         * Updates the red recruitment alert box
+         */
+        function updateAlerts(targetDate, leadTimeMonths, data, cohortSize) {
+            if (!targetDate || isNaN(targetDate.getTime())) {
+                alertBox.classList.add('hidden');
+                return;
+            }
+            // Reset alert box to default recruitment state
+            alertBox.classList.remove('bg-yellow-100', 'border-yellow-500', 'text-yellow-700');
+            alertBox.classList.add('bg-red-100', 'border-red-500', 'text-red-700');
+            alertBox.classList.remove('hidden');
+
+
+            // Calculate recruitment start date
+            const startDate = new Date(targetDate.getTime());
+            startDate.setMonth(startDate.getMonth() - leadTimeMonths);
+            
+            // Find max deficit to calculate cohorts
+            const maxDeficit = Math.max(0, ...data.map(s => s.supplyDeficit));
+            const cohortsNeeded = Math.ceil(maxDeficit / cohortSize);
+
+            const dateFormatter = new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+            
+            // Set default alert content
+            alertBox.innerHTML = `
+                <p class="font-bold">Recruitment Alert</p>
+                <p>To meet demand for <strong id="alert-date">${dateFormatter.format(targetDate)}</strong>, you must begin recruiting <strong id="alert-cohorts">${cohortsNeeded} ${cohortsNeeded === 1 ? 'cohort' : 'cohorts'}</strong> by <strong id="alert-start-date">${dateFormatter.format(startDate)}</strong>.</p>
+            `;
+        }
+
+        /**
+         * Renders the main bar chart using Chart.js
+         */
+        function renderChart(data) {
+            const labels = data.map(s => s.time);
+            const chartData = data.map(s => s.supplyDeficit);
+            const backgroundColors = data.map(s => s.supplyDeficit > 0 ? 'rgba(220, 38, 38, 0.7)' : 'rgba(22, 163, 74, 0.7)');
+            const borderColors = data.map(s => s.supplyDeficit > 0 ? 'rgba(220, 38, 38, 1)' : 'rgba(22, 163, 74, 1)');
+            
+            if (myChart) {
+                myChart.destroy();
+            }
+
+            myChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Projected Deficit / Surplus',
+                        data: chartData,
+                        backgroundColor: backgroundColors,
+                        borderColor: borderColors,
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false, // This is key for the container height to work
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Time Slot (EST)'
+                            },
+                            ticks: {
+                                maxRotation: 90,
+                                minRotation: 90,
+                                autoSkip: true,
+                                maxTicksLimit: 20 // Show fewer labels to avoid crowding
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Tutors (Deficit / Surplus)'
+                            }
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    const value = context.parsed.y;
+                                    if (value > 0) {
+                                        label += `${value} tutor deficit`;
+                                    } else {
+                                        label += `${Math.abs(value)} tutor surplus`;
+                                    }
+                                    return label;
+                                }
+                            }
+                        },
+                        legend: {
+                            display: false
+                        }
+                    }
+                }
+            });
+        }
+
+        /**
+         * Populates the detailed data table
+         */
+        function populateTable(data) {
+            tableBody.innerHTML = ''; // Clear existing rows
+            data.forEach(slot => {
+                const isDeficit = slot.supplyDeficit > 0;
+                const deficitClass = isDeficit ? 'text-red-600 font-bold' : 'text-green-600';
+
+                const row = `
+                    <tr>
+                        <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">${slot.time}</td>
+                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${slot.projectedDemand.toLocaleString()}</td>
+                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${slot.targetSupply.toLocaleString()}</td>
+                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${slot.supply.toLocaleString()}</td>
+                        <td class="px-4 py-3 whitespace-nowrap text-sm ${deficitClass}">${slot.supplyDeficit.toLocaleString()}</td>
+                    </tr>
+                `;
+                tableBody.innerHTML += row;
+            });
+        }
+
+        /**
+         * Sets up the initial state of the app
+         */
+        function initializeApp() {
+            // --- MODIFICATION: Assign all DOM variables now that the DOM is loaded ---
+            targetStudentsInput = document.getElementById('target-students');
+            targetDateInput = document.getElementById('target-date');
+            leadTimeInput = document.getElementById('lead-time');
+            bufferPercentInput = document.getElementById('buffer-percent');
+            cohortSizeInput = document.getElementById('cohort-size');
+            runButton = document.getElementById('run-projection-btn');
+            loadingSpinner = document.getElementById('loading-spinner');
+            
+            kpiDeficit = document.getElementById('kpi-deficit');
+            kpiCohorts = document.getElementById('kpi-cohorts');
+            kpiUtilization = document.getElementById('kpi-utilization');
+            
+            alertBox = document.getElementById('recruitment-alert');
+            // Remove hardcoded alert content elements since we set them via innerHTML
+            // alertDate = document.getElementById('alert-date');
+            // alertCohorts = document.getElementById('alert-cohorts');
+            // alertStartDate = document.getElementById('alert-start-date');
+            
+            tableBody = document.getElementById('results-table-body');
+            ctx = document.getElementById('capacityChart').getContext('2d');
+            // --- END MODIFICATION ---
+
+            // Set default date to Feb 9, 2026 (from original analysis)
+            const defaultTargetDate = new Date('2026-02-09T00:00:00');
+            targetDateInput.value = defaultTargetDate.toISOString().split('T')[0];
+
+            // Add event listener
+            runButton.addEventListener('click', runProjection);
+
+            // Run initial projection on load
+            runProjection();
+        }
+
+        // === APP START ===
+        // --- MODIFICATION: Wait for the *entire window* to load, including scripts ---
+        window.addEventListener('load', initializeApp);
+
+    </script>
+</body>
+</html>
+
